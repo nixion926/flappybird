@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pixel Flappy Bird</title>
+    <!-- Google Fonts: Press Start 2P for pixelated text -->
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <style>
+        /* Custom CSS for pixelated look and game layout */
+        body {
+            font-family: 'Press Start 2P', cursive;
+            background-color: #1a1a2e; /* Dark theme inspired by old games */
+            color: #e0e0e0;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            overflow: hidden; /* Prevent scrollbars */
+        }
+
+        /* Canvas for the game */
+        canvas {
+            border: 4px solid #4a148c; /* Purple border */
+            box-shadow: 8px 8px 0px 0px #2a0a5e; /* Deeper purple shadow for 3D effect */
+            border-radius: 8px; /* Slightly rounded corners */
+            background-color: #7b9cff; /* Sky blue background (initial) */
+            display: block; /* Remove extra space below canvas */
+            /* Ensure canvas scales responsively while maintaining aspect ratio */
+            max-width: 90vw;
+            max-height: 80vh;
+            width: auto;
+            height: auto;
+            image-rendering: pixelated; /* Essential for crisp pixel art scaling */
+            image-rendering: -moz-crisp-edges;
+            image-rendering: crisp-edges;
+        }
+
+        /* Game messages and controls */
+        #game-info {
+            margin-top: 20px;
+            text-align: center;
+            color: #00bcd4;
+            font-size: clamp(0.8rem, 3vw, 1.2rem);
+            line-height: 1.5;
+        }
+
+        #score-display {
+            font-size: clamp(1.2rem, 5vw, 2.5rem);
+            color: #FFFF00; /* Yellow for score */
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 0px #FFA500;
+        }
+
+        .pixel-button {
+            background-color: #00bcd4; /* Cyan button */
+            color: #1a1a2e;
+            padding: 0.8rem 1.5rem;
+            text-shadow: 2px 2px 0px #0097a7; /* Darker cyan text shadow */
+            cursor: pointer;
+            transition: all 0.1s ease-in-out;
+            border: 4px solid #0097a7;
+            box-shadow: 6px 6px 0px 0px #006064;
+            border-radius: 8px;
+            font-size: clamp(0.7rem, 2.5vw, 1rem);
+            margin-top: 15px;
+        }
+
+        .pixel-button:hover {
+            transform: translate(2px, 2px);
+            box-shadow: 4px 4px 0px 0px #006064;
+        }
+
+        .pixel-button:active {
+            transform: translate(6px, 6px);
+            box-shadow: 0px 0px 0px 0px #006064;
+        }
+
+        /* Message box for alerts */
+        .message-box-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .message-box {
+            background-color: #2a0a5e;
+            border: 4px solid #4a148c;
+            box-shadow: 8px 8px 0px 0px #1a0a3e;
+            border-radius: 8px;
+            padding: 30px;
+            text-align: center;
+            max-width: 90%;
+            font-size: clamp(0.9rem, 4vw, 1.3rem);
+            color: #e0e0e0;
+        }
+
+        .message-box h3 {
+            color: #00bcd4;
+            margin-bottom: 15px;
+        }
+
+        .message-box button {
+            margin-top: 20px;
+            padding: 10px 20px;
+            font-size: clamp(0.8rem, 3vw, 1.1rem);
+        }
+    </style>
+</head>
+<body>
+    <!-- Display for current score and high score -->
+    <div id="score-display">SCORE: 0 | HIGH SCORE: 0</div>
+    <canvas id="gameCanvas" width="480" height="320"></canvas>
+    <div id="game-info">
+        <p>Press <span style="color:#FFFF00;">Spacebar</span> or <span style="color:#FFFF00;">Click</span> to flap!</p>
+        <button id="startButton" class="pixel-button">START GAME</button>
+    </div>
+
+    <script>
+        window.onload = function() {
+            const canvas = document.getElementById('gameCanvas');
+            const ctx = canvas.getContext('2d');
+            const scoreDisplay = document.getElementById('score-display');
+            const gameInfo = document.getElementById('game-info');
+            const startButton = document.getElementById('startButton');
+
+            // Set image rendering for crisp pixels
+            ctx.imageSmoothingEnabled = false;
+            ctx.webkitImageSmoothingEnabled = false;
+            ctx.mozImageSmoothingEnabled = false;
+
+            // Game variables
+            let bird = {
+                x: 50,
+                y: canvas.height / 2,
+                width: 28, // Re-imagined width for details
+                height: 24, // Re-imagined height for details
+                gravity: 0.2,
+                lift: -3.5,
+                velocity: 0,
+                wingFrame: 0 // New property for wing animation
+            };
+
+            let pipes = [];
+            let pipeWidth = 36; // Increased width for details
+            let pipeGap = 90; // Gap between top and bottom pipe
+            let pipeSpeed = 1.5;
+            let frameCount = 0;
+            let score = 0;
+            let highScore = parseInt(localStorage.getItem('flappyBirdHighScore')) || 0; // Load high score from local storage
+            let gameOver = false;
+            let gameStarted = false;
+
+            // Day/Night Cycle Variables
+            let isDay = true; // Start as day
+            let gameTimer = 0;
+            const transitionDuration = 20 * 60; // 30 seconds * 60 frames per second (assuming 60 FPS)
+
+            // Game Colors (consistent with portfolio theme)
+            // Bird Colors - more muted/realistic for pixel art
+            const birdColor = '#FFC107'; // A desaturated yellow/orange
+            const birdShadeColor = '#E6A800'; // Darker shade for bird body
+            const birdLightColor = '#FFEB3B'; // Lighter shade for bird body highlights
+            const birdEyeColor = '#000000'; // Black
+            const birdEyeHighlightColor = '#FFFFFF'; // White for eye highlight
+            const birdBeakColor = '#D84315'; // A more muted orange/brown for beak
+            const birdWingColor = '#FFA000'; // Darker orange/brown for wing
+
+            // Pipe Colors - adjusted for brighter base with more detailed shading
+            const dayPipeColor = '#00FF00'; // Bright green base
+            const dayPipeLightColor = '#00E000'; // Slightly darker for inner details/highlights
+            const dayPipeDarkColor = '#00A000'; // For shadows and darker outlines
+            const dayPipeInnerOutline = '#007000'; // Even darker for internal outlines
+
+            const nightPipeColor = '#4CAF50'; // Muted green for night pipes
+            const nightPipeLightColor = '#388E3C';
+            const nightPipeDarkColor = '#2E7D32';
+            const nightPipeInnerOutline = '#1B5E20';
+
+            const dayGroundColor = '#8B4513'; // Brown (SaddleBrown)
+            const nightGroundColor = '#5A2A0A'; // Darker brown for ground
+
+            const daySkyColor = '#7b9cff';
+            const nightSkyColor = '#1a1a2e'; // Dark blue/purple
+
+            // Cloud variables
+            let clouds = [];
+            const maxClouds = 5;
+            const cloudColor = '#E0E0E0'; // Light grey for clouds
+            const nightCloudColor = '#808080'; // Darker grey for night clouds
+
+            // Cloud class definition
+            class Cloud {
+                constructor(canvasWidth, canvasHeight) {
+                    this.x = Math.random() * canvasWidth;
+                    this.y = Math.random() * (canvasHeight * 0.4); // Upper half of the sky
+                    this.size = 20 + Math.random() * 30; // Base size of the cloud
+                    this.speed = 0.1 + Math.random() * 0.2; // Slower than pipes
+                    // Define pixel sub-blocks for a "fluffy" cloud shape
+                    this.shape = [
+                        { dx: 0, dy: 0, w: 1, h: 1 },
+                        { dx: 1, dy: 0, w: 2, h: 1 },
+                        { dx: 3, dy: 0, w: 1, h: 1 },
+                        { dx: 0, dy: 1, w: 1, h: 2 },
+                        { dx: 1, dy: 1, w: 3, h: 2 },
+                        { dx: 4, dy: 1, w: 1, h: 1 },
+                        { dx: 1, dy: 3, w: 2, h: 1 }
+                    ];
+                }
+
+                update(canvasWidth) {
+                    this.x -= this.speed;
+                    if (this.x + this.size * 5 < 0) { // If completely off screen to the left
+                        this.x = canvasWidth; // Reset to the right
+                        this.y = Math.random() * (canvas.height * 0.4); // New random height
+                        this.size = 20 + Math.random() * 30;
+                        this.speed = 0.1 + Math.random() * 0.2;
+                    }
+                }
+
+                draw(ctx, currentColor) {
+                    ctx.fillStyle = currentColor;
+                    const pixelUnit = this.size / 5; // Scale pixel shape based on cloud size
+                    this.shape.forEach(part => {
+                        ctx.fillRect(
+                            Math.floor(this.x + part.dx * pixelUnit),
+                            Math.floor(this.y + part.dy * pixelUnit),
+                            Math.floor(part.w * pixelUnit),
+                            Math.floor(part.h * pixelUnit)
+                        );
+                    });
+                }
+            }
+
+            // Initialize clouds
+            function initClouds() {
+                clouds = [];
+                for (let i = 0; i < maxClouds; i++) {
+                    clouds.push(new Cloud(canvas.width, canvas.height));
+                }
+            }
+
+            // Function to show a custom message box instead of alert()
+            function showMessageBox(title, message, buttonText = "OK", callback = null) {
+                // Remove existing message box if any
+                const existingOverlay = document.querySelector('.message-box-overlay');
+                if (existingOverlay) {
+                    existingOverlay.remove();
+                }
+
+                const overlay = document.createElement('div');
+                overlay.className = 'message-box-overlay';
+
+                const messageBox = document.createElement('div');
+                messageBox.className = 'message-box';
+
+                const titleElement = document.createElement('h3');
+                titleElement.textContent = title;
+                messageBox.appendChild(titleElement);
+
+                const messageElement = document.createElement('p');
+                messageElement.innerHTML = message; // Use innerHTML for <br>
+                messageBox.appendChild(messageElement);
+
+                const button = document.createElement('button');
+                button.className = 'pixel-button';
+                button.textContent = buttonText;
+                button.onclick = () => {
+                    overlay.remove();
+                    if (callback) {
+                        callback();
+                    }
+                };
+                messageBox.appendChild(button);
+
+                overlay.appendChild(messageBox);
+                document.body.appendChild(overlay);
+            }
+
+            // Draw functions
+            function drawBird() {
+                const birdX = Math.floor(bird.x);
+                const birdY = Math.floor(bird.y);
+
+                // Re-imagined Bird Body (more detailed pixel art)
+                ctx.fillStyle = birdColor;
+                ctx.fillRect(birdX + 2, birdY, 24, 22); // Main body
+                ctx.fillRect(birdX, birdY + 4, 28, 16); // Wider part
+
+                ctx.fillStyle = birdShadeColor;
+                ctx.fillRect(birdX + 4, birdY + 2, 20, 2); // Top shade
+                ctx.fillRect(birdX + 2, birdY + 20, 24, 2); // Bottom shade
+                ctx.fillRect(birdX + 26, birdY + 6, 2, 14); // Right shade
+
+                ctx.fillStyle = birdLightColor;
+                ctx.fillRect(birdX + 4, birdY + 4, 2, 14); // Left highlight
+                ctx.fillRect(birdX + 6, birdY + 4, 18, 2); // Top-left highlight
+
+                // Eye
+                ctx.fillStyle = birdEyeColor;
+                ctx.fillRect(birdX + 20, birdY + 6, 4, 4); // Right eye base
+                ctx.fillStyle = birdEyeHighlightColor;
+                ctx.fillRect(birdX + 21, birdY + 7, 2, 2); // Right eye highlight
+
+                // Beak
+                ctx.fillStyle = birdBeakColor;
+                ctx.fillRect(birdX + 28, birdY + 10, 6, 3); // Upper beak
+                ctx.fillRect(birdX + 29, birdY + 13, 5, 2); // Lower beak
+                ctx.fillStyle = birdShadeColor; // Beak detail
+                ctx.fillRect(birdX + 31, birdY + 11, 2, 1);
+
+                // Wing animation
+                ctx.fillStyle = birdWingColor;
+                if (bird.wingFrame === 0) { // Wing up
+                    ctx.fillRect(birdX + 10, birdY + 8, 12, 4);
+                    ctx.fillRect(birdX + 12, birdY + 6, 8, 2);
+                } else if (bird.wingFrame === 1) { // Wing mid
+                    ctx.fillRect(birdX + 10, birdY + 10, 12, 4);
+                    ctx.fillRect(birdX + 12, birdY + 12, 8, 2);
+                } else { // Wing down
+                    ctx.fillRect(birdX + 10, birdY + 12, 12, 4);
+                    ctx.fillRect(birdX + 12, birdY + 14, 8, 2);
+                }
+
+                // Tail
+                ctx.fillStyle = birdColor;
+                ctx.fillRect(birdX - 6, birdY + 14, 8, 4); // Main tail segment
+                ctx.fillStyle = birdShadeColor;
+                ctx.fillRect(birdX - 4, birdY + 15, 6, 2); // Tail shading
+                ctx.fillRect(birdX - 2, birdY + 16, 4, 2); // Tail tip detail
+            }
+
+            function drawPipes() {
+                // Determine current pipe colors based on day/night
+                const currentPipeColor = isDay ? dayPipeColor : nightPipeColor;
+                const currentPipeLightColor = isDay ? dayPipeLightColor : nightPipeLightColor;
+                const currentPipeDarkColor = isDay ? dayPipeDarkColor : nightPipeDarkColor;
+                const currentPipeInnerOutline = isDay ? dayPipeInnerOutline : nightPipeInnerOutline;
+
+                pipes.forEach(p => {
+                    const pipeX = Math.floor(p.x);
+                    const pipeY = Math.floor(p.y);
+                    const capHeight = 10; // Height of the pipe cap
+                    const capOverlap = 4; // How much the cap overlaps the pipe body
+
+                    // --- Top Pipe ---
+                    // Main body
+                    ctx.fillStyle = currentPipeColor;
+                    ctx.fillRect(pipeX, pipeY, pipeWidth, p.height);
+
+                    // Inner highlight/shadow on body (simulating depth)
+                    ctx.fillStyle = currentPipeLightColor;
+                    ctx.fillRect(pipeX + 2, pipeY + 2, pipeWidth - 4, p.height - 4);
+                    ctx.fillStyle = currentPipeDarkColor;
+                    ctx.fillRect(pipeX + pipeWidth - 4, pipeY, 4, p.height); // Right side shadow
+                    ctx.fillRect(pipeX, pipeY + p.height - 4, pipeWidth, 4); // Bottom shadow
+
+                    // Pipe cap - main part
+                    ctx.fillStyle = currentPipeColor;
+                    ctx.fillRect(pipeX - capOverlap, pipeY + p.height - capHeight, pipeWidth + (capOverlap * 2), capHeight);
+
+                    // Pipe cap - shading/details
+                    ctx.fillStyle = currentPipeLightColor; // Top highlight
+                    ctx.fillRect(pipeX - capOverlap + 2, pipeY + p.height - capHeight + 2, pipeWidth + (capOverlap * 2) - 4, 2);
+                    ctx.fillStyle = currentPipeDarkColor; // Bottom shadow
+                    ctx.fillRect(pipeX - capOverlap + 2, pipeY + p.height - 4, pipeWidth + (capOverlap * 2) - 4, 2);
+                    ctx.fillRect(pipeX - capOverlap, pipeY + p.height - capHeight, 2, capHeight); // Left shadow
+                    ctx.fillRect(pipeX + pipeWidth + capOverlap - 2, pipeY + p.height - capHeight, 2, capHeight); // Right shadow
+
+                    ctx.fillStyle = currentPipeInnerOutline; // Inner rim detail
+                    ctx.fillRect(pipeX, pipeY + p.height - capHeight + 4, pipeWidth, 2);
+
+
+                    // --- Bottom Pipe ---
+                    const bottomPipeY = pipeY + p.height + pipeGap;
+                    const bottomPipeHeight = canvas.height - (p.height + pipeGap);
+
+                    // Main body
+                    ctx.fillStyle = currentPipeColor;
+                    ctx.fillRect(pipeX, bottomPipeY, pipeWidth, bottomPipeHeight);
+
+                    // Inner highlight/shadow on body (simulating depth)
+                    ctx.fillStyle = currentPipeLightColor;
+                    ctx.fillRect(pipeX + 2, bottomPipeY + 2, pipeWidth - 4, bottomPipeHeight - 4);
+                    ctx.fillStyle = currentPipeDarkColor;
+                    ctx.fillRect(pipeX + pipeWidth - 4, bottomPipeY, 4, bottomPipeHeight); // Right side shadow
+                    ctx.fillRect(pipeX, bottomPipeY, pipeWidth, 4); // Top shadow
+
+                    // Pipe cap - main part
+                    ctx.fillStyle = currentPipeColor;
+                    ctx.fillRect(pipeX - capOverlap, bottomPipeY, pipeWidth + (capOverlap * 2), capHeight);
+
+                    // Pipe cap - shading/details
+                    ctx.fillStyle = currentPipeLightColor; // Top highlight
+                    ctx.fillRect(pipeX - capOverlap + 2, bottomPipeY + 2, pipeWidth + (capOverlap * 2) - 4, 2);
+                    ctx.fillStyle = currentPipeDarkColor; // Bottom shadow
+                    ctx.fillRect(pipeX - capOverlap + 2, bottomPipeY + capHeight - 4, pipeWidth + (capOverlap * 2) - 4, 2);
+                    ctx.fillRect(pipeX - capOverlap, bottomPipeY, 2, capHeight); // Left shadow
+                    ctx.fillRect(pipeX + pipeWidth + capOverlap - 2, bottomPipeY, 2, capHeight); // Right shadow
+
+                    ctx.fillStyle = currentPipeInnerOutline; // Inner rim detail
+                    ctx.fillRect(pipeX, bottomPipeY + capHeight - 6, pipeWidth, 2);
+                });
+            }
+
+            function drawGround() {
+                const currentGroundColor = isDay ? dayGroundColor : nightGroundColor;
+                const currentPipeDarkColor = isDay ? dayPipeDarkColor : nightPipeDarkColor; // Using darker pipe color for ground detail
+
+                ctx.fillStyle = currentGroundColor;
+                ctx.fillRect(0, canvas.height - 20, canvas.width, 20); // Ground layer
+                ctx.fillStyle = currentPipeDarkColor;
+                ctx.fillRect(0, canvas.height - 20, canvas.width, 4); // Top edge of ground for detail
+            }
+
+            // Update score display function
+            function updateScoreDisplay() {
+                scoreDisplay.textContent = `SCORE: ${score} |  HIGH SCORE: ${highScore}`;
+            }
+
+            // Game update logic
+            function update() {
+                if (gameOver || !gameStarted) return;
+
+                // Bird physics
+                bird.velocity += bird.gravity;
+                bird.y += bird.velocity;
+
+                // Ground collision
+                if (bird.y + bird.height > canvas.height - 20) {
+                    bird.y = canvas.height - 20 - bird.height;
+                    endGame();
+                }
+                // Ceiling collision
+                if (bird.y < 0) {
+                    bird.y = 0;
+                    bird.velocity = 0;
+                }
+
+                // Pipe generation
+                frameCount++;
+                if (frameCount % 100 === 0) { // Adjust for pipe frequency
+                    let topPipeHeight = Math.random() * (canvas.height / 2 - pipeGap / 2) + 20; // Random height for top pipe
+                    pipes.push({
+                        x: canvas.width,
+                        y: 0,
+                        height: topPipeHeight,
+                        passed: false // To track if bird has passed for scoring
+                    });
+                }
+
+                // Update bird wing frame for animation
+                if (frameCount % 8 === 0) { // Adjust speed of wing flap here
+                    bird.wingFrame = (bird.wingFrame + 1) % 3; // Cycle through 3 frames (0, 1, 2)
+                }
+
+                // Update clouds
+                clouds.forEach(cloud => cloud.update(canvas.width));
+
+                // Day/Night cycle logic
+                gameTimer++;
+                if (gameTimer >= transitionDuration) {
+                    isDay = !isDay; // Toggle day/night
+                    gameTimer = 0; // Reset timer
+                }
+
+                // Move pipes and check collisions
+                for (let i = 0; i < pipes.length; i++) {
+                    let p = pipes[i];
+                    p.x -= pipeSpeed;
+
+                    // Collision detection with top pipe
+                    if (bird.x < p.x + pipeWidth &&
+                        bird.x + bird.width > p.x &&
+                        bird.y < p.y + p.height) {
+                        endGame();
+                    }
+                    // Collision detection with bottom pipe
+                    if (bird.x < p.x + pipeWidth &&
+                        bird.x + bird.width > p.x &&
+                        bird.y + bird.height > p.y + p.height + pipeGap) {
+                        endGame();
+                    }
+
+                    // Scoring
+                    if (p.x + pipeWidth < bird.x && !p.passed) {
+                        score++;
+                        p.passed = true;
+                        updateScoreDisplay(); // Update display immediately on score change
+                    }
+
+                    // Remove off-screen pipes
+                    if (p.x + pipeWidth < 0) {
+                        pipes.splice(i, 1);
+                        i--;
+                    }
+                }
+            }
+
+            // Game drawing loop
+            function draw() {
+                const currentSkyColor = isDay ? daySkyColor : nightSkyColor;
+                ctx.fillStyle = currentSkyColor;
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                // Draw clouds
+                const currentCloudColor = isDay ? cloudColor : nightCloudColor;
+                clouds.forEach(cloud => cloud.draw(ctx, currentCloudColor));
+
+                drawPipes();
+                drawBird();
+                drawGround();
+            }
+
+            // Main game loop
+            function gameLoop() {
+                update();
+                draw();
+                if (!gameOver) {
+                    requestAnimationFrame(gameLoop);
+                }
+            }
+
+            // Input handlers
+            function flap() {
+                if (!gameOver && gameStarted) {
+                    bird.velocity = bird.lift;
+                }
+            }
+
+            document.addEventListener('keydown', (e) => {
+                if (e.code === 'Space') {
+                    flap();
+                    e.preventDefault(); // Prevent scrolling the page
+                }
+            });
+
+            canvas.addEventListener('click', flap);
+
+            // Game Start/Reset
+            function startGame() {
+                score = 0;
+                updateScoreDisplay(); // Initialize score display
+                bird.y = canvas.height / 2;
+                bird.velocity = 0;
+                pipes = [];
+                frameCount = 0;
+                gameOver = false;
+                gameStarted = true;
+                gameInfo.style.display = 'none'; // Hide info on start
+                gameTimer = 0; // Reset game timer
+                isDay = true; // Start each game in day mode
+                initClouds(); // Re-initialize clouds for a fresh start
+                gameLoop();
+            }
+
+            function endGame() {
+                gameOver = true;
+                gameStarted = false;
+
+                // Update high score
+                if (score > highScore) {
+                    highScore = score;
+                    localStorage.setItem('flappyBirdHighScore', highScore); // Save high score
+                }
+                updateScoreDisplay(); // Update display one last time with final score and new high score
+
+                showMessageBox(
+                    "GAME OVER!",
+                    `Your score: ${score}<br>High Score: ${highScore}`,
+                    "PLAY AGAIN",
+                    startGame // Callback to restart the game
+                );
+            }
+
+            // Initial setup for the start button
+            startButton.addEventListener('click', startGame);
+
+            // Initial display of high score when the page loads
+            updateScoreDisplay();
+            initClouds(); // Initialize clouds even before the game starts
+        };
+    </script>
+</body>
+</html>
