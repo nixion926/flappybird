@@ -117,6 +117,7 @@
     </style>
 </head>
 <body>
+    <h1>Flappy Bird</h1>
     <!-- Display for current score and high score -->
     <div id="score-display">SCORE: 0 | HIGH SCORE: 0</div>
     <canvas id="gameCanvas" width="480" height="320"></canvas>
@@ -424,7 +425,7 @@
 
             // Update score display function
             function updateScoreDisplay() {
-                scoreDisplay.textContent = `SCORE: ${score} |  HIGH SCORE: ${highScore}`;
+                scoreDisplay.innerHTML = `SCORE: ${score}<br><br>HIGH SCORE: ${highScore}`;
             }
 
             // Game update logic
@@ -545,6 +546,10 @@
             });
 
             canvas.addEventListener('click', flap);
+            document.addEventListener('touchstart', (e) => {
+                e.preventDefault(); // Prevent scrolling on touch devices
+                flap();
+            });
 
             // Game Start/Reset
             function startGame() {
